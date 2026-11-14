@@ -3,12 +3,13 @@ import 'package:submit_me/pages/home_page.dart';
 import 'package:submit_me/pages/my_asset.dart';
 import 'package:submit_me/pages/public_assets.dart';
 import 'package:submit_me/widgets/profile_drawer.dart';
+import 'package:submit_me/widgets/upload_dialog.dart';
 
 /// The main application container for SubmitME after successful authentication.
 /// Features:
 /// 1. Persistent Bottom Navigation Bar with 4 items (Home, My Assets, Public Assets, Profile).
 /// 2. Switching tabs does NOT recreate page state (uses IndexedStack).
-/// 3. Floating Action Button (+) with a temporary Phase 4A placeholder message.
+/// 3. Floating Action Button (+) opens the upload modal for notes/assignments/lab works.
 /// 4. Tapping "Profile" opens the Profile Drawer from the RIGHT side (endDrawer).
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -21,15 +22,16 @@ class _MainNavigationState extends State<MainNavigation> {
   // GlobalKey to programmatically control the Scaffold's endDrawer
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  // GlobalKeys to trigger refreshes across tabs without heavy state libraries
+  final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
+  final GlobalKey<MyAssetsPageState> _myAssetsKey = GlobalKey<MyAssetsPageState>();
+  final GlobalKey<PublicAssetsPageState> _publicAssetsKey = GlobalKey<PublicAssetsPageState>();
+
   // Current active tab index (0: Home, 1: My Assets, 2: Public Assets)
   int _currentIndex = 0;
 
   // The 3 persistent tab views
-  final List<Widget> _pages = const [
-    HomePage(),
-    MyAssetsPage(),
-    PublicAssetsPage(),
-  ];
+  late final List<Widget> _pages;
 
   // Tab Titles for the AppBar
   final List<String> _titles = const [
@@ -37,6 +39,22 @@ class _MainNavigationState extends State<MainNavigation> {
     'My Assets',
     'Public Assets',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      HomePage(key: _homeKey),
+      MyAssetsPage(
+        key: _myAssetsKey,
+        onAssetChanged: () {
+          // Whenever an asset is deleted, immediately update Home upload count
+          _homeKey.currentState?.refreshCount();
+        },
+      ),
+      PublicAssetsPage(key: _publicAssetsKey),
+    ];
+  }
 
   void _onTabTapped(int index) {
     if (index == 3) {
@@ -51,14 +69,28 @@ class _MainNavigationState extends State<MainNavigation> {
     }
   }
 
-  void _onUploadPressed() {
-    // Phase 4A placeholder for the FAB (+)
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Upload functionality coming soon in Phase 4B.'),
-        duration: Duration(seconds: 2),
-      ),
+  /// Opens the upload modal dialog and refreshes views upon successful upload
+  Future<void> _onUploadPressed() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const UploadDialog(),
     );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Asset uploaded successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+      // Refresh Home upload count and both asset lists immediately
+      _homeKey.currentState?.refreshCount();
+      _myAssetsKey.currentState?.refreshList();
+      _publicAssetsKey.currentState?.refreshList();
+    }
   }
 
   @override

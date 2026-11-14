@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:submit_me/services/supabase_service.dart';
 
 /// The "My Assets" tab.
 /// Displays all assets uploaded by the currently authenticated student.
-/// Retrieves records from `public.assets` filtered by `user_id = currentUser.id`.
+/// Retrieves records from `public.assets` filtered strictly by `user_id = currentUser.id`.
+/// Supports downloading/opening via short-lived signed URLs and deleting files.
 class MyAssetsPage extends StatefulWidget {
-  const MyAssetsPage({super.key});
+  final VoidCallback? onAssetChanged;
+
+  const MyAssetsPage({super.key, this.onAssetChanged});
 
   @override
-  State<MyAssetsPage> createState() => _MyAssetsPageState();
+  State<MyAssetsPage> createState() => MyAssetsPageState();
 }
 
-class _MyAssetsPageState extends State<MyAssetsPage> {
+class MyAssetsPageState extends State<MyAssetsPage> {
   List<Map<String, dynamic>> _assets = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -19,6 +23,11 @@ class _MyAssetsPageState extends State<MyAssetsPage> {
   @override
   void initState() {
     super.initState();
+    _fetchMyAssets();
+  }
+
+  /// Public method to refresh the assets list from external triggers (e.g. upload)
+  void refreshList() {
     _fetchMyAssets();
   }
 
@@ -43,6 +52,108 @@ class _MyAssetsPageState extends State<MyAssetsPage> {
           _errorMessage = 'Failed to load your assets: $e';
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  /// Securely opens or downloads the file using a temporary signed URL (valid for 60 seconds).
+  Future<void> _openFile(String? storagePath) async {
+    if (storagePath == null || storagePath.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('File path is missing.')),
+      );
+      return;
+    }
+
+    try {
+      final signedUrl = await SupabaseService.getSignedUrl(storagePath);
+      final uri = Uri.parse(signedUrl);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw 'Could not launch URL in browser.';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open file: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Asks for confirmation and deletes the asset from both Storage and PostgreSQL.
+  Future<void> _deleteAsset(Map<String, dynamic> asset) async {
+    final topicName = asset['topic_name'] ?? 'this asset';
+    final assetId = asset['id']?.toString();
+    final storagePath = asset['file_path']?.toString();
+
+    if (assetId == null || storagePath == null) return;
+
+    // 1. Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Asset', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Are you sure you want to delete "$topicName"?\n\nThis will permanently delete the file from storage and cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    // 2. Perform deletion
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deleting asset...'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+
+      await SupabaseService.deleteAsset(
+        assetId: assetId,
+        storagePath: storagePath,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Asset deleted successfully.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh local list
+        _fetchMyAssets();
+        // Notify Home page to update file count
+        widget.onAssetChanged?.call();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete asset: $error'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
     }
   }
@@ -161,7 +272,7 @@ class _MyAssetsPageState extends State<MyAssetsPage> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'You haven\'t uploaded any notes or assignments yet.\nTap the (+) button below to get started.',
+                          'You haven\'t uploaded any notes or assignments yet.\nTap the (+) button below to upload your first study material.',
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 14, color: Colors.black54),
                         ),
@@ -199,6 +310,7 @@ class _MyAssetsPageState extends State<MyAssetsPage> {
               final fileName = asset['file_name'] ?? 'Unknown File';
               final fileType = asset['file_type'] ?? 'unknown';
               final uploadDate = _formatDate(asset['created_at']);
+              final storagePath = asset['file_path'];
 
               return Card(
                 color: Colors.white,
@@ -209,6 +321,7 @@ class _MyAssetsPageState extends State<MyAssetsPage> {
                 child: ListTile(
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  onTap: () => _openFile(storagePath),
                   leading: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
@@ -283,6 +396,29 @@ class _MyAssetsPageState extends State<MyAssetsPage> {
                         ),
                       ],
                     ),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Open / Download button
+                      IconButton(
+                        tooltip: 'Open / Download',
+                        icon: const Icon(
+                          Icons.open_in_new_rounded,
+                          color: Color.fromARGB(255, 70, 136, 216),
+                        ),
+                        onPressed: () => _openFile(storagePath),
+                      ),
+                      // Delete button
+                      IconButton(
+                        tooltip: 'Delete asset',
+                        icon: Icon(
+                          Icons.delete_outline,
+                          color: Colors.red.shade400,
+                        ),
+                        onPressed: () => _deleteAsset(asset),
+                      ),
+                    ],
                   ),
                 ),
               );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:submit_me/services/supabase_service.dart';
 
 /// The "Public Assets" tab.
@@ -11,10 +12,10 @@ class PublicAssetsPage extends StatefulWidget {
   const PublicAssetsPage({super.key});
 
   @override
-  State<PublicAssetsPage> createState() => _PublicAssetsPageState();
+  State<PublicAssetsPage> createState() => PublicAssetsPageState();
 }
 
-class _PublicAssetsPageState extends State<PublicAssetsPage> {
+class PublicAssetsPageState extends State<PublicAssetsPage> {
   List<Map<String, dynamic>> _publicAssets = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -22,6 +23,11 @@ class _PublicAssetsPageState extends State<PublicAssetsPage> {
   @override
   void initState() {
     super.initState();
+    _fetchPublicAssets();
+  }
+
+  /// Public method to refresh public assets from outside (e.g. after upload)
+  void refreshList() {
     _fetchPublicAssets();
   }
 
@@ -46,6 +52,33 @@ class _PublicAssetsPageState extends State<PublicAssetsPage> {
           _errorMessage = 'Failed to load public assets: $e';
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  /// Securely opens or downloads the file using a temporary signed URL (valid for 60 seconds).
+  Future<void> _openFile(String? storagePath) async {
+    if (storagePath == null || storagePath.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('File path is missing.')),
+      );
+      return;
+    }
+
+    try {
+      final signedUrl = await SupabaseService.getSignedUrl(storagePath);
+      final uri = Uri.parse(signedUrl);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw 'Could not launch URL in browser.';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open file: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
     }
   }
@@ -202,6 +235,7 @@ class _PublicAssetsPageState extends State<PublicAssetsPage> {
               final fileName = asset['file_name'] ?? 'Unknown File';
               final fileType = asset['file_type'] ?? 'unknown';
               final uploadDate = _formatDate(asset['created_at']);
+              final storagePath = asset['file_path'];
 
               return Card(
                 color: Colors.white,
@@ -212,6 +246,7 @@ class _PublicAssetsPageState extends State<PublicAssetsPage> {
                 child: ListTile(
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  onTap: () => _openFile(storagePath),
                   leading: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
@@ -286,6 +321,14 @@ class _PublicAssetsPageState extends State<PublicAssetsPage> {
                         ),
                       ],
                     ),
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Open / Download',
+                    icon: const Icon(
+                      Icons.open_in_new_rounded,
+                      color: Color.fromARGB(255, 70, 136, 216),
+                    ),
+                    onPressed: () => _openFile(storagePath),
                   ),
                 ),
               );

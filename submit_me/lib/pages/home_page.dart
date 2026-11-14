@@ -11,10 +11,10 @@ class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
   // State variables for the uploaded file count
   int _uploadCount = 0;
   bool _isLoading = true;
@@ -23,6 +23,11 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _fetchUploadCount();
+  }
+
+  /// Public method to refresh the upload count from external callers
+  void refreshCount() {
     _fetchUploadCount();
   }
 
