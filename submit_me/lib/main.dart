@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:submit_me/auth_page.dart';
 import 'package:submit_me/login_page.dart';
 import 'package:submit_me/registration_page.dart';
-import 'package:submit_me/pages/test_dashboard_page.dart';
+import 'package:submit_me/pages/main_navigation.dart';
 import 'package:submit_me/services/supabase_service.dart';
 
 void main() async {
@@ -42,13 +42,13 @@ class MyApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      // AuthGate decides whether to show the landing page or the authenticated dashboard
+      // AuthGate automatically directs between landing page and the main application
       home: const AuthGate(),
       routes: {
-        '/home': (context) => const HomePage(),
+        '/home': (context) => const AuthLandingPage(),
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegistrationPage(),
-        '/dashboard': (context) => const TestDashboardPage(),
+        '/dashboard': (context) => const MainNavigation(),
       },
     );
   }
@@ -63,7 +63,7 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     // If credentials are not configured yet, show the landing page
     if (!SupabaseService.isConfigured) {
-      return const HomePage();
+      return const AuthLandingPage();
     }
 
     // StreamBuilder listens for auth changes (login, logout, token refresh).
@@ -74,11 +74,11 @@ class AuthGate extends StatelessWidget {
         final session = Supabase.instance.client.auth.currentSession;
 
         if (session != null) {
-          // User is authenticated -> show dashboard
-          return const TestDashboardPage();
+          // User is authenticated -> show the main SubmitME application
+          return const MainNavigation();
         } else {
           // User is not authenticated -> show welcome/landing screen
-          return const HomePage();
+          return const AuthLandingPage();
         }
       },
     );

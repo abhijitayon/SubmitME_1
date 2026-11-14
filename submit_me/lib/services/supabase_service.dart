@@ -100,4 +100,52 @@ class SupabaseService {
       await client.auth.signOut();
     }
   }
+
+  // ============================================================================
+  // DATABASE METHODS (public.assets table)
+  // ============================================================================
+
+  /// Returns the total number of files uploaded by the currently authenticated user.
+  /// Queries: SELECT COUNT(*) FROM assets WHERE user_id = currentUser.id
+  static Future<int> getUserAssetCount() async {
+    final userId = currentUserId;
+    if (userId == null) return 0;
+
+    try {
+      final count = await client
+          .from('assets')
+          .count(CountOption.exact)
+          .eq('user_id', userId);
+      return count;
+    } catch (e) {
+      // Return 0 if there was a network/database error
+      return 0;
+    }
+  }
+
+  /// Retrieves all assets uploaded by the current authenticated user.
+  /// Strictly filters by `user_id = currentUserId` (enforced by RLS as well).
+  static Future<List<Map<String, dynamic>>> getMyAssets() async {
+    final userId = currentUserId;
+    if (userId == null) return [];
+
+    final List<dynamic> response = await client
+        .from('assets')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// Retrieves shared assets across all authenticated users.
+  /// Does not select uploader private data (like user_id/email) to preserve privacy.
+  static Future<List<Map<String, dynamic>>> getPublicAssets() async {
+    final List<dynamic> response = await client
+        .from('assets')
+        .select('id, topic_name, file_name, file_type, created_at')
+        .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(response);
+  }
 }

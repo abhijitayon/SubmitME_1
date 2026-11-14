@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-//landing page
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+// Landing page for unauthenticated visitors
+class AuthLandingPage extends StatelessWidget {
+  const AuthLandingPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -67,3 +67,6 @@ class HomePage extends StatelessWidget {
     );
   }
 }
+
+/// Backwards compatibility alias for existing code
+typedef HomePage = AuthLandingPage;
